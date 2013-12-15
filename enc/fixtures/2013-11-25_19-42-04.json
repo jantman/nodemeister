@@ -1,0 +1,1 @@
+[{"pk": 1, "model": "enc.node", "fields": {"excluded_groups": [], "hostname": "testnode", "description": "testnode_description", "groups": []}}, {"pk": 1, "model": "enc.nodeclass", "fields": {"node": 1, "classname": "barclass", "classparams": null}}, {"pk": 2, "model": "enc.nodeparameter", "fields": {"node": 1, "paramkey": "foo_param", "paramvalue": "{\"foo\":\"bar\"}"}}]

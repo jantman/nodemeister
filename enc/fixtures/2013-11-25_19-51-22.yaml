@@ -1,0 +1,15 @@
+classes:
+  barclass: null
+  class_group1_bar:
+    bar_grp1: baz
+  class_group1_foo:
+    foo_grp1: bar_grp1
+  cls_grp2: null
+parameters:
+  done_count: 2
+  foo_param:
+    foo: bar
+  param_group1_bar:
+    fooG1param: bar
+  param_grp2:
+    foo: param_grp2

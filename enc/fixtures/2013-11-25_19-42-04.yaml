@@ -1,0 +1,6 @@
+classes:
+  barclass: null
+parameters:
+  done_count: 0
+  foo_param:
+    foo: bar

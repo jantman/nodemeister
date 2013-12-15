@@ -1,0 +1,60 @@
+Project Requirements (from Eli):
+needed_features = ['api','importer','changelog','stats_collection']
+finished = ['json_validation','south','search_by_class','search_bynode','search_by_group','search_by_paramter']
+investigate = ['django_grappelli']
+
+
+Additional Features:
+- README.rst rendered to HTML, as a flatpage/"About" link
+  - or full docs, included in source tree in HTML format
+- alternate admin skin (django-suit?)
+- show all inherited classes and params for a node
+- actual views that can also pull in PuppetDB/PuppetBoard and other data sources
+  (i.e. move out of the django admin)
+
+Tests:
+- unit tests (without db)
+- unit tests (with db)
+  - fixture factories???
+- integration tests
+- full functional tests (selenium - pip install selenium)
+WebTest?
+
+TO DO FOR RELEASE:
+- reset migrations, start with South from the beginning, switch to django-reversion
+  - need to make sure there's a way to clean up reversion info
+- publish to pypi? or at least our mirror?
+- issues - tests, travis, readthedocs, etc.
+- selenium? how?
+- link github to jira?
+- clean up MANIFEST.in if possible (do we need all that?)
+- run packaging/setup.py by qwcode and ask for suggestions
+- verify requirements.txt
+- document installation procedure
+- puppet module
+- update setup.py with license, copyright, etc.
+- file headers on all files
+  - need to find out about any license/copyright language we need in headers, if any
+- AUTHORS file, NOTICE file, CHANGELOG file
+- add changelog
+
+##################################################
+
+reset South:
+http://stackoverflow.com/a/4656070/211734
+
+    rm -r appname/migrations/ 
+    ./manage.py reset south 
+    ./manage.py convert_to_south appname 
+
+this needs to be done for ALL APPS! "reset south" resets them for ALL.
+
+(Notice that the “reset south” part clears migration records for ALL apps, so make sure you either run the other two lines for all apps or delete selectively).
+
+##################################################
+
+DB init:
+
+CREATE USER nodemeister WITH PASSWORD 'masterofthenodes' CREATEDB;
+CREATE DATABASE nodemeister WITH OWNER nodemeister;
+GRANT ALL PRIVILEGES ON DATABASE nodemeister TO nodemeister;
