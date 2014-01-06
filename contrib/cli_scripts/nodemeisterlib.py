@@ -6,6 +6,214 @@ NodeMeister REST API.
 import requests
 import anyjson
 
+MISSING_ITEM = '-'
+DIFF_MARKER = ">"
+
+def red(text):
+    """
+    Shameless hack-up of the 'termcolor' python package
+    by Konstantin Lepa - <https://pypi.python.org/pypi/termcolor>
+    to reduce rependencies and only make red text.
+    """
+    s = '\033[%dm%s\033[0m' % (31, text)
+    return s
+
+def print_columns(lines, spacer='   '):
+    """
+    Take a list of lines, each being a list with 3 elements
+    (the three columns to print) and print in 3 columns.
+
+    :param lines: list of 3-element lists, each list is a line and
+    each sub-list are the 3 columns in the line
+    :type lines: list of lists
+    :param spacer: spacer between columns, default 3 spaces
+    :type lines: string
+    """
+    s = ""
+    # get the column width
+    clen = [0, 0, 0]
+    for l in lines:
+        for c in xrange(0, 3):
+            if len(str(l[c])) > clen[c]:
+                clen[c] = len(str(l[c]))
+    line_spec = "{{0:<{1}s}}{0}{{1:<{2}s}}{0}{{2:<{3}s}}\n".format(' ' * 3, clen[0], clen[1], clen[2])
+
+    # print the lines
+    for l in lines:
+        if len(l) > 3 and l[3] == True:
+            s += red(line_spec.format(DIFF_MARKER + l[0], l[1], l[2]))
+        else:
+            s += line_spec.format(l[0], str(l[1]), str(l[2]))
+    return s
+
+def pretty_diff_list(title, oA, oB):
+    """
+    Generate a pretty diff of two dicts.
+
+    :param title: the title/heading for the line
+    :type title: string
+    :param oA: first object
+    :param oB: second object
+    :returns: list of lines, each a list of 3 columns
+    :rtype: list of lists
+    """
+    lines = []
+    items = set.union(set(oA), set(oB))
+    for i in sorted(items):
+        if i in oA and i in oB:
+            lines.append(['', i, i])
+        elif i in oA:
+            lines.append(['', i, MISSING_ITEM, True])
+        elif i in oB:
+            lines.append(['', MISSING_ITEM, i, True])
+    return lines
+
+def pretty_diff_str(title, oA, oB):
+    """
+    Generate a pretty diff of two dicts.
+
+    :param title: the title/heading for the line
+    :type title: string
+    :param oA: first object
+    :param oB: second object
+    :returns: list of lines, each a list of 3 columns
+    :rtype: list of lists
+    """
+    if oA != oB:
+        return [[title, oA, oB, True]]
+    return [[title, oA, oB]]
+
+def pretty_diff_dict(title, oA, oB):
+    """
+    Generate a pretty diff of two dicts.
+
+    :param title: the title/heading for the line
+    :type title: string
+    :param oA: first object
+    :param oB: second object
+    :returns: list of lines, each a list of 3 columns
+    :rtype: list of lists
+    """
+    lines = [[title, '', '']]
+
+    keys = set.union(set(oA.keys()), set(oB.keys()))
+
+    for k in sorted(keys):
+        if k in oA and k in oB:
+            if oA[k] == oB[k]:
+                lines.append([k, oA[k], oB[k]])
+            else:
+                lines.append([k, oA[k], oB[k], True])
+        elif k in oA:
+            lines.append([k, oA[k], MISSING_ITEM, True])
+        else:
+            lines.append([k, MISSING_ITEM, oB[k], True])
+
+    return lines
+
+def pretty_diff_obj(title, oA, oB):
+    """
+    Generate a pretty diff of two objects (actually just
+    dict, list or string) of lines suitable for use in pretty_diff_dicts()
+
+    This method is a pass-through to
+    pretty_diff_(dict|string|list)
+    depending on the input type.
+
+    :param title: the title/heading for the line
+    :type title: string
+    :param oA: first object
+    :param oB: second object
+    :returns: list of lines, each a list of 3 columns
+    :rtype: list of lists
+    """
+    if type(oA) == type({}) or type(oB) == type({}):
+        return pretty_diff_dict(title, oA, oB)
+    elif type(oA) == type("") or type(oB) == type("") or type(oA) == type(u"") or type(oB) == type(u""):
+        return pretty_diff_str(title, oA, oB)
+    else:
+        return pretty_diff_list(title, oA, oB)
+    return []
+
+def pretty_diff(title, titleA, dictA, titleB, dictB):
+    """
+    Generate a "pretty" printable diff of two Nodes or Groups
+    containing arbitrarily deep dict, list or string items.
+
+    Intended to be used for the "text" dicts in migrate_group()
+    and migrate_node().
+
+    :param title: overall title of the diff
+    :type title: string
+    :param titleA: title of the first dict
+    :type titleA: string
+    :param dictA: the first dict
+    :type dictA: dict
+    :param titleB: title of the second dict
+    :type titleB: string
+    :param dictB: the second dict
+    :type dictB: dict
+    :returns: multi-line string, columnar diff of dicts
+    :rtype: string
+    """
+    s = "Diff of %s\n" % title
+    lines = []
+    lines.append(['', titleA, titleB])
+    lines.append(['', '-' * len(titleA), '-' * len(titleB)])
+
+    lines.append(['name', dictA.get('name', '<none>'), dictB.get('name', '<none>')])
+    lines.append(['id', dictA.get('id', '<none>'), dictB.get('id', '<none>')])
+    lines.append(['description', dictA.get('description', '<none>'), dictB.get('description', '<none>')])
+    dictA.pop('name', None)
+    dictA.pop('id', None)
+    dictA.pop('description', None)
+    dictB.pop('name', None)
+    dictB.pop('id', None)
+    dictB.pop('description', None)
+    lines.append(['', '', ''])
+
+    k = set.union(set(dictA.keys()), set(dictB.keys()))
+
+    for p in sorted(k):
+        lines.append([p.capitalize() + ':', '', ''])
+        lines.extend(pretty_diff_obj('', dictA.get(p), dictB.get(p)))
+        lines.append(['', '', ''])
+
+    s += print_columns(lines)
+    return s
+
+def get_nm_node_yaml(nm_host, node_name, verbose=False):
+    """
+    Get the raw ENC YAML for a given node
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param node_name: name of the node to get YAML for
+    :type node_name: string
+    :rtype: string
+    :returns: raw YAML string, or None
+    """
+    nm_url = "http://%s/enc/puppet/%s" % (nm_host, node_name)
+    r = requests.get(nm_url, headers={'Accept': 'text/yaml'})
+    if r.status_code == 200:
+        return r.content
+    return None
+
+def get_dashboard_node_yaml(url, verbose=False):
+    """
+    Given the full URL to a Puppet Dashboard node YAML file,
+    return the content of the YAML file as a string.
+
+    :param url: full URL to Dashboard node yaml
+    :type url: string
+    :rtype: string
+    :returns: raw YAML string, or None
+    """
+    r = requests.get(url, headers={'Accept': 'text/yaml'})
+    if r.status_code == 200:
+        return r.content
+    return None
+
 def get_json(url):
     """
     uses requests to GET and return deserialized json
