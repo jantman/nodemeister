@@ -182,7 +182,7 @@ def pretty_diff(title, titleA, dictA, titleB, dictB):
     s += print_columns(lines)
     return s
 
-def get_nm_node_yaml(nm_host, node_name, verbose=False):
+def get_nm_node_yaml(nm_host, node_name, ssl_verify=False, verbose=False):
     """
     Get the raw ENC YAML for a given node
 
@@ -190,26 +190,30 @@ def get_nm_node_yaml(nm_host, node_name, verbose=False):
     :type nm_host: string
     :param node_name: name of the node to get YAML for
     :type node_name: string
+    :param ssl_verify: whether or not to verify SSL certificate, default False
+    :type ssl_verify: boolean
     :rtype: string
     :returns: raw YAML string, or None
     """
     nm_url = "http://%s/enc/puppet/%s" % (nm_host, node_name)
-    r = requests.get(nm_url, headers={'Accept': 'text/yaml'})
+    r = requests.get(nm_url, headers={'Accept': 'text/yaml'}, verify=verify)
     if r.status_code == 200:
         return r.content
     return None
 
-def get_dashboard_node_yaml(url, verbose=False):
+def get_dashboard_node_yaml(url, ssl_verify=False, verbose=False):
     """
     Given the full URL to a Puppet Dashboard node YAML file,
     return the content of the YAML file as a string.
 
     :param url: full URL to Dashboard node yaml
     :type url: string
+    :param ssl_verify: whether or not to verify SSL certificate, default False
+    :type ssl_verify: boolean
     :rtype: string
     :returns: raw YAML string, or None
     """
-    r = requests.get(url, headers={'Accept': 'text/yaml'})
+    r = requests.get(url, headers={'Accept': 'text/yaml'}, verify=verify)
     if r.status_code == 200:
         return r.content
     return None
