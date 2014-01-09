@@ -41,7 +41,7 @@ def print_columns(lines, spacer='   '):
     # print the lines
     for l in lines:
         if len(l) > 3 and l[3] == True:
-            s += red(line_spec.format(DIFF_MARKER + l[0], l[1], l[2]))
+            s += red(line_spec.format(DIFF_MARKER + l[0], str(l[1]), str(l[2])))
         else:
             s += line_spec.format(l[0], str(l[1]), str(l[2]))
     return s
@@ -196,7 +196,7 @@ def get_nm_node_yaml(nm_host, node_name, ssl_verify=False, verbose=False):
     :returns: raw YAML string, or None
     """
     nm_url = "http://%s/enc/puppet/%s" % (nm_host, node_name)
-    r = requests.get(nm_url, headers={'Accept': 'text/yaml'}, verify=verify)
+    r = requests.get(nm_url, headers={'Accept': 'text/yaml'}, verify=ssl_verify)
     if r.status_code == 200:
         return r.content
     return None
@@ -213,7 +213,7 @@ def get_dashboard_node_yaml(url, ssl_verify=False, verbose=False):
     :rtype: string
     :returns: raw YAML string, or None
     """
-    r = requests.get(url, headers={'Accept': 'text/yaml'}, verify=verify)
+    r = requests.get(url, headers={'Accept': 'text/yaml'}, verify=ssl_verify)
     if r.status_code == 200:
         return r.content
     return None
@@ -286,7 +286,7 @@ def get_nm_group_params(nm_host):
     j = get_json("http://%s/enc/parameters/groups/" % nm_host)
     for o in j:
         if o['paramvalue'] is not None:
-	    o['paramvalue'] = clean_value(o['paramvalue'])
+            o['paramvalue'] = clean_value(o['paramvalue'])
         r[o['id']] = o
     return r
 
@@ -662,6 +662,49 @@ def add_class_to_node(nm_host, node_id, classname, classparams=None, dry_run=Fal
     if status_code == 201:
         return True
     print("ERROR: add_class_to_node got status code %d" % status_code)
+    return False
+
+def get_name_for_class_exclusion(nm_host, class_exclusion_id, verbose):
+    """
+    Get the excluded class name for a given ClassExclusion ID.
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param class_exclusion_id: numeric ID of the class exclusion
+    :type class_exclusion_id: int
+    :returns: string name of class, or False on faliure
+    :rtype: string or False
+    """
+    r = {}
+    j = get_json("http://%s/enc/exclusions/classes/" % nm_host)
+    if j is None:
+        return False
+    for o in j:
+        if o['id'] == class_exclusion_id:
+            return o['exclusion']
+    return False
+
+def add_node_class_exclusion(nm_host, node_id, classname, dry_run=False, verbose=False):
+    """
+    add a class exclusion to a node in NodeMeister
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param node_id: numeric ID of the node to add param to
+    :type node_id: int
+    :param classname: class name to exclude
+    :type classname: string
+    :param dry_run: if True, only print what would be done, do not make any changes
+    :type dry_run: boolean
+    :returns: True on success or False on failure
+    :rtype: boolean
+    """
+    payload = {'node': node_id, 'exclusion': classname}
+    url = "http://%s/enc/exclusions/classes/" % nm_host
+    status_code = do_post(url, payload, dry_run=dry_run)
+    if status_code == 201:
+        return True
+    print("ERROR: add_node_class_exclusion got status code %d" % status_code)
     return False
 
 def clean_value(v, debug=False):

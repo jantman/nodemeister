@@ -83,9 +83,15 @@ def main():
     if not dash_node:
         print("ERROR loading dashboard yaml.")
         sys.exit(1)
+    # Dashboard doesn't support parameterized classes, so it
+    # has a list instead of a dict/hash
+    dash_classes = {}
+    for c in dash_node['classes']:
+        dash_classes[c] = None
+    dash_node['classes'] = dash_classes
 
-    print nm_node
-    print dash_node
+    d = pretty_diff(node_name, 'dashboard', dash_node, 'nodemeister', nm_node)
+    print d
 
     return True
 
