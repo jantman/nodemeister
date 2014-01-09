@@ -62,6 +62,13 @@ class GroupParamViewSet(viewsets.ModelViewSet):
     model = GroupParameter
 
 
+class ParamExclusionViewSet(viewsets.ModelViewSet):
+    model = ParamExclusion
+
+
+class ClassExclusionViewSet(viewsets.ModelViewSet):
+    model = ClassExclusion
+
 # Routers provide an easy way of automatically determining the URL conf
 router = routers.DefaultRouter()
 router.register(r'nodes', NodeViewSet)
@@ -70,3 +77,5 @@ router.register(r'classes/nodes', NodeClassViewSet)
 router.register(r'classes/groups', GroupClassViewSet)
 router.register(r'parameters/nodes', NodeParamViewSet)
 router.register(r'parameters/groups', GroupParamViewSet)
+router.register(r'exclusions/parameters', ParamExclusionViewSet)
+router.register(r'exclusions/classes', ClassExclusionViewSet)
