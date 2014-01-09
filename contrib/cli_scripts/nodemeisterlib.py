@@ -285,13 +285,15 @@ def get_nm_group_params(nm_host):
     r = {}
     j = get_json("http://%s/enc/parameters/groups/" % nm_host)
     for o in j:
+        if o['paramvalue'] is not None:
+	    o['paramvalue'] = clean_value(o['paramvalue'])
         r[o['id']] = o
     return r
 
 def get_nm_group(nm_host, gname=None, gid=None, groupnames=None):
     """
     Return a dict of information about a group
-    in NM, by either name or ID. If fname is specified,
+    in NM, by either name or ID. If gname is specified,
     it will be resolved to the id.
 
     groupnames, if specified, is the output dict from get_group_names();
@@ -473,6 +475,204 @@ def add_class_to_group(nm_host, gid, classname, classparams=None, dry_run=False)
         return True
     print("ERROR: add_class_to_group got status code %d" % status_code)
     return False
+
+def get_node_names(nm_host):
+    """
+    Return a dict of nodes in the NM instance,
+    id => hostname
+
+    :param nm_host: NodeMeister hostname/IP
+    :type nm_host: string
+    :rtype: dict
+    :returns: NM nodes, dict of the form {id<int>: hostname<string>}
+    """
+    j = get_json("http://%s/enc/nodes/" % nm_host)
+    names = {}
+    for n in j:
+        names[n['id']] = n['hostname']
+    return names
+
+def get_nm_node_id(nm_host, hostname, nodenames=None, dry_run=False):
+    """
+    Get the node ID of a node specified by hostname
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param hostname: hostname of the node
+    :type hostname: string
+    :param nodenames: dict of nodes as returned by get_node_names()
+    :type nodenames: dict
+    :returns: int ID of the group or False on failure
+    :rtype: int or False
+    """
+    if dry_run:
+        return 0
+    if nodenames is None:
+        nodenames = get_node_names(nm_host)
+    for n in nodenames:
+        if nodenames[n] == hostname:
+            return n
+    return False
+
+def get_nm_node(nm_host, hostname=None, node_id=None, nodenames=None):
+    """
+    Return a dict of information about a node
+    in NM, by either name or ID. If nodename is specified,
+    it will be resolved to the id.
+
+    nodenames, if specified, is the output dict from get_node_names();
+    if it is not specified, get_node_names() will be called internally.
+
+    :param nm_host: NodeMeister hostname/IP
+    :type nm_host: string
+    :param hostname: name of node to get
+    :type hostname: string
+    :param node_id: ID of node to get, overrides hostname
+    :type node_id: int
+    :param nodenames: output of get_node_names(), to prevent calling it again if we already have it
+    :type nodenames: dict
+    :rtype: dict
+    :returns: unserialized JSON dict representing the specified group, of the form:
+      {'hostname': <string>, 'parameters': [<param IDs>], 'classes': [<class IDs>], 'parents': [<group IDs>],
+      'groups': [<group IDs>], 'id': <int>, 'description': <string>}
+    """
+    if node_id is None and hostname is None:
+        raise ValueError("get_nm_node called without hostname or node_id")
+
+    if node_id is None:
+        if nodenames is None:
+            nodenames = get_node_names(nm_host)
+        for n in nodenames:
+            if nodenames[n] == hostname:
+                node_id = n
+        if node_id is None:
+            return {}
+
+    j = get_json("http://%s/enc/nodes/%d/" % (nm_host, node_id))
+    return j
+
+def get_nm_node_classes(nm_host):
+    """
+    Return a dict of all node classes in NM,
+    with their id as the dict key.
+
+    :param nm_host: NodeMeister hostname/IP
+    :type nm_host: string
+    :rtype: dict
+    :returns: NM node classes, dict of the form:
+      {id<int>: {'classname': <string>, 'classparams': <string or None>, 'node': <int>, 'id': <int>}
+    """
+    r = {}
+    j = get_json("http://%s/enc/classes/nodes/" % nm_host)
+    for o in j:
+        r[o['id']] = o
+    return r
+
+def get_nm_node_params(nm_host):
+    """
+    Return a dict of all node params in NM,
+    with their id as the dict key.
+
+    :param nm_host: NodeMeister hostname/IP
+    :type nm_host: string
+    :rtype: dict
+    :returns: NM node params, dict of the form:
+      {id<int>: {'paramkey': <string>, 'paramvalue': <string or None>, 'node': <int>, 'id': <int>}
+    """
+    r = {}
+    j = get_json("http://%s/enc/parameters/nodes/" % nm_host)
+    for o in j:
+        r[o['id']] = o
+    return r
+
+def add_node(nm_host, hostname, description, groups=None, dry_run=False):
+    """
+    add a node to NodeMeister
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param hostname: hostname of the new node
+    :type hostname: string
+    :param description: description of the new node
+    :type description: string
+    :param groups: groups that this node is in
+    :type groups: list of int IDs
+    :param dry_run: if True, only print what would be done, do not make any changes
+    :type dry_run: boolean
+    :returns: int ID of the new node on success or False on failure
+    :rtype: int or False
+    """
+    payload = {'hostname': hostname, 'description': description}
+    if groups is not None:
+        payload['groups'] = groups
+    url = "http://%s/enc/nodes/" % nm_host
+    status_code = do_post(url, payload, dry_run=dry_run)
+    if status_code == 201:
+        return get_nm_node_id(nm_host, hostname, dry_run=dry_run)
+    print("ERROR: add_node got status code %d" % status_code)
+    return False
+
+def add_param_to_node(nm_host, node_id, pname, pval, dry_run=False):
+    """
+    add a parameter to a node in NodeMeister
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param node_id: numeric ID of the node to add param to
+    :type node_id: int
+    :param pname: parameter name
+    :type pname: string
+    :param pval: parameter value
+    :type pval: string
+    :param dry_run: if True, only print what would be done, do not make any changes
+    :type dry_run: boolean
+    :returns: True on success or False on failure
+    :rtype: boolean
+    """
+    if pval.strip() == "" or pval == "" or pval == "''":
+        pval = None
+    payload = {'node': node_id, 'paramkey': pname, 'paramvalue': pval}
+    url = "http://%s/enc/parameters/nodes/" % nm_host
+    status_code = do_post(url, payload, dry_run=dry_run)
+    if status_code == 201:
+        return True
+    print("ERROR: add_param_to_node got status code %d" % status_code)
+    return False
+
+def add_class_to_node(nm_host, node_id, classname, classparams=None, dry_run=False):
+    """
+    add a class to a node in NodeMeister
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param node_id: numeric ID of the node to add param to
+    :type node_id: int
+    :param classname: class name
+    :type classname: string
+    :param classparams: class parameters, default None
+    :type classparams: string or None
+    :param dry_run: if True, only print what would be done, do not make any changes
+    :type dry_run: boolean
+    :returns: True on success or False on failure
+    :rtype: boolean
+    """
+    payload = {'node': node_id, 'classname': classname, 'classparams': classparams}
+    url = "http://%s/enc/classes/nodes/" % nm_host
+    status_code = do_post(url, payload, dry_run=dry_run)
+    if status_code == 201:
+        return True
+    print("ERROR: add_class_to_node got status code %d" % status_code)
+    return False
+
+def clean_value(v, debug=False):
+    """
+    Strip bad characters off of values
+    """
+    if debug:
+        print("clean_value '%s'" % v)
+    if type(v) == type("") or type(v) == type(u""):
+        v = v.strip('"\\')
+    return v
 
 def do_post(url, payload, dry_run=False):
     """
