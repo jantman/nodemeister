@@ -18,7 +18,7 @@ def red(text):
     s = '\033[%dm%s\033[0m' % (31, text)
     return s
 
-def print_columns(lines, spacer='   '):
+def print_columns(lines, spacer='   ', onlydifferent=False):
     """
     Take a list of lines, each being a list with 3 elements
     (the three columns to print) and print in 3 columns.
@@ -28,11 +28,16 @@ def print_columns(lines, spacer='   '):
     :type lines: list of lists
     :param spacer: spacer between columns, default 3 spaces
     :type lines: string
+    :param onlydifferent: only output differing lines
+    :type onlydifferent: boolean
     """
     s = ""
     # get the column width
     clen = [0, 0, 0]
     for l in lines:
+        if onlydifferent:
+            if len(l) < 3:
+                continue
         for c in xrange(0, 3):
             if len(str(l[c])) > clen[c]:
                 clen[c] = len(str(l[c]))
@@ -43,6 +48,8 @@ def print_columns(lines, spacer='   '):
         if len(l) > 3 and l[3] == True:
             s += red(line_spec.format(DIFF_MARKER + l[0], str(l[1]), str(l[2])))
         else:
+            if onlydifferent:
+                continue
             s += line_spec.format(l[0], str(l[1]), str(l[2]))
     return s
 
@@ -135,7 +142,7 @@ def pretty_diff_obj(title, oA, oB):
         return pretty_diff_list(title, oA, oB)
     return []
 
-def pretty_diff(title, titleA, dictA, titleB, dictB):
+def pretty_diff(title, titleA, dictA, titleB, dictB, onlydifferent=False):
     """
     Generate a "pretty" printable diff of two Nodes or Groups
     containing arbitrarily deep dict, list or string items.
@@ -153,6 +160,8 @@ def pretty_diff(title, titleA, dictA, titleB, dictB):
     :type titleB: string
     :param dictB: the second dict
     :type dictB: dict
+    :param onlydifferent: only output differing lines
+    :type onlydifferent: boolean
     :returns: multi-line string, columnar diff of dicts
     :rtype: string
     """
@@ -177,9 +186,9 @@ def pretty_diff(title, titleA, dictA, titleB, dictB):
     for p in sorted(k):
         lines.append([p.capitalize() + ':', '', ''])
         lines.extend(pretty_diff_obj('', dictA.get(p), dictB.get(p)))
-        lines.append(['', '', ''])
+        #lines.append(['', '', ''])
 
-    s += print_columns(lines)
+    s += print_columns(lines, onlydifferent=onlydifferent)
     return s
 
 def get_nm_node_yaml(nm_host, node_name, ssl_verify=False, verbose=False):

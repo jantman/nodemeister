@@ -36,6 +36,9 @@ def main():
     p.add_option('--dashboard-port', dest='dashboard_port', action='store', type='int',
                  help='puppet dashboard port (default 443)', default=443)
 
+    p.add_option('--diff-only', dest='onlydifferent', action='store_true', default=False,
+                 help='only output differing lines')
+
     p.add_option('-d', '--dashboard', dest='dashboard', action='store', type='string',
                  help='puppet dashboard hostname or IP address')
 
@@ -90,7 +93,7 @@ def main():
         dash_classes[c] = None
     dash_node['classes'] = dash_classes
 
-    d = pretty_diff(node_name, 'dashboard', dash_node, 'nodemeister', nm_node)
+    d = pretty_diff(node_name, 'dashboard', dash_node, 'nodemeister', nm_node, onlydifferent=options.onlydifferent)
     print d
 
     return True
