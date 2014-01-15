@@ -745,3 +745,146 @@ def do_post(url, payload, dry_run=False):
         return 201
     r = requests.post(url, data=anyjson.serialize(payload), headers=headers)
     return r.status_code
+
+def clone_nodemeister_node(nm_host, dst_name, src_name, munge_res, group_replace=None, noop=False, verbose=False):
+    """
+    Clone a node in nodemeister, munging all parameters and class params through munge_re,
+    a list of lists, each having 2 elements, a regex and a string to replace matches with.
+
+    group_replace is a hash of old_group_id => new_group_id to replace when creating the new node
+    """
+    nodes = get_node_names(nm_host)
+    dst_node_id = get_nm_node_id(nm_host, dst_name, nodenames=nodes)
+    if dst_node_id is not False:
+        print("ERROR: node %s already exists in NodeMeister with id %d." % (dst_name, dst_node_id))
+        return False
+
+    src_node = get_nm_node(nm_host, hostname=src_name, nodenames=nodes)
+    if len(src_node) == 0:
+        print("ERROR: could not find source node %s" % src_name)
+        return False
+    if verbose:
+        print("Got source node id: %d" % src_node['id'])
+        print("\t%s" % src_node)
+
+    classes = get_nm_node_classes(nm_host)
+    params = get_nm_node_params(nm_host)
+
+    # add to the right groups
+    groups = []
+    for g in src_node['groups']:
+        if group_replace is not None:
+            if g in group_replace:
+                if verbose:
+                    print("  changing group %d to %d (group_replace)" % (g, group_replace[g]))
+                g = group_replace[g]
+        groups.append(g)
+
+    # TODO - these are going to be difficult because we need to resolve IDs from source to names,
+    #        and then map to the correct IDs for our new node
+
+    # add excluded groups
+    # add excluded params
+
+    node_id = add_node(nm_host, dst_name, "imported by %s" % __file__, groups=groups, dry_run=noop)
+    if node_id is False:
+        print("ERROR adding node in Nodemeister.")
+        return False
+    else:
+        print("Node added to NodeMeister with id %d" % node_id)
+
+    ok = True
+    # add excluded classes
+    for c in src_node['excluded_classes']:
+        c_name = get_name_for_class_exclusion(nm_host, c, verbose=verbose)
+        if verbose:
+            print("excluded class %s (%d)" % (c_name, c))
+        res = add_node_class_exclusion(nm_host, node_id, c_name, dry_run=noop, verbose=verbose)
+        if not res:
+            print("ERROR adding class exclusion of '%s' to node %d" % (c_name, node_id))
+            ok = False
+        if verbose:
+            print("\tadded class_exclusion of '%s' to group %d" % (c_name, node_id))
+
+    # add the params
+    for p in src_node['parameters']:
+        for (ptn, repl) in munge_re:
+            foo = re.sub(ptn, repl, src_node['parameters'][p])
+            if foo != src_node['parameters'][p] and verbose:
+                print("Munged value of '%s' from '%s' to '%s'" % (p, src_node['parameters'][p], foo))
+            src_node['parameters'][p] = foo
+        res = add_param_to_node(nm_host, node_id, p, src_node['parameters'][p], dry_run=noop)
+        if not res:
+            print("ERROR adding param %s with value '%s' to node %d" % (p, src_node['parameters'][p], node_id))
+            ok = False
+        if verbose:
+            print("\tadded param %s with value '%s' to group %d" % (p, src_node['parameters'][p], node_id))
+
+    if len(src_node['classes']) > 0:
+        print("ERROR: script does not yet migrate classes for nodes.")
+        ok = False
+
+    if ok is False:
+        return False
+    return node_id
+
+def clone_nodemeister_group(nm_host, dst_gname, src_gname, munge_re=None, noop=False, verbose=False):
+    """
+    Clone a group in nodemeister, munging all parameters and class params through munge_re,
+    a list of lists, each having 2 elements, a regex and a string to replace matches with.
+    """
+    group_names = get_group_names(nm_host)
+    dst_gid = get_nm_group_id(nm_host, dst_gname, groups=group_names)
+    if dst_gid is not False:
+        print("ERROR: group %s already exists in NodeMeister with id %d." % (dst_gname, dst_gid))
+        return False
+
+    src_group = get_nm_group(nm_host, gname=src_gname, groupnames=group_names)
+    if len(src_group) == 0:
+        print("ERROR: could not find source group %s" % src_gname)
+        return False
+    if verbose:
+        print("Got source group id: %d" % src_group['id'])
+        print("\t%s" % src_group)
+    classes = get_nm_group_classes(nm_host)
+    params = get_nm_group_params(nm_host)
+    interp_src_group = interpolate_group(src_group, classes, params, group_names)
+    #if verbose:
+    #    print("\tInterpolated: %s" % interp_src_group)
+
+    groups = []
+    for foo in src_group['groups']:
+        bar = get_nm_group_id(nm_host, foo, groups=group_names)
+        if bar:
+            groups.append(bar)
+
+    # ok, try adding the group
+    gid = add_group(nm_host, dst_gname, "imported by %s" % __file__, groups=groups, dry_run=noop)
+    if gid is False:
+        print("ERROR adding group in Nodemeister.")
+        return False
+    else:
+        print("Group added to NodeMeister with id %d" % gid)
+
+    ok = True
+    # add the params
+    for p in src_group['parameters']:
+        for (ptn, repl) in munge_re:
+            foo = re.sub(ptn, repl, src_group['parameters'][p])
+            if foo != src_group['parameters'][p] and verbose:
+                print("Munged value of '%s' from '%s' to '%s'" % (p, src_group['parameters'][p], foo))
+            src_group['parameters'][p] = foo
+        res = add_param_to_group(nm_host, gid, p, src_group['parameters'][p], dry_run=noop)
+        if not res:
+            print("ERROR adding param %s with value '%s' to group %d" % (p, src_group['parameters'][p], gid))
+            ok = False
+        if verbose:
+            print("added param %s with value '%s' to group %d" % (p, src_group['parameters'][p], gid))
+
+    if len(src_group['classes']) > 0:
+        print("ERROR: script does not yet migrate classes for groups.")
+        ok = False
+
+    if ok is False:
+        return False
+    return gid
