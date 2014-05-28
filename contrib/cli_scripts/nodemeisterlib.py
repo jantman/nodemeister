@@ -450,7 +450,7 @@ def add_param_to_group(nm_host, gid, pname, pval, dry_run=False):
     :returns: True on success or False on failure
     :rtype: boolean
     """
-    if pval.strip() == "" or pval == "" or pval == "''":
+    if isinstance(pval, basestring) and (pval.strip() == "" or pval == "" or pval == "''"):
         pval = None
     payload = {'group': gid, 'paramkey': pname, 'paramvalue': pval}
     url = "http://%s/enc/parameters/groups/" % nm_host
