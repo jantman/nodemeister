@@ -6,6 +6,227 @@ NodeMeister REST API.
 import requests
 import anyjson
 
+MISSING_ITEM = '-'
+DIFF_MARKER = ">"
+
+def red(text):
+    """
+    Shameless hack-up of the 'termcolor' python package
+    by Konstantin Lepa - <https://pypi.python.org/pypi/termcolor>
+    to reduce rependencies and only make red text.
+    """
+    s = '\033[%dm%s\033[0m' % (31, text)
+    return s
+
+def print_columns(lines, spacer='   ', onlydifferent=False):
+    """
+    Take a list of lines, each being a list with 3 elements
+    (the three columns to print) and print in 3 columns.
+
+    :param lines: list of 3-element lists, each list is a line and
+    each sub-list are the 3 columns in the line
+    :type lines: list of lists
+    :param spacer: spacer between columns, default 3 spaces
+    :type lines: string
+    :param onlydifferent: only output differing lines
+    :type onlydifferent: boolean
+    """
+    s = ""
+    # get the column width
+    clen = [0, 0, 0]
+    for l in lines:
+        if onlydifferent:
+            if len(l) < 3:
+                continue
+        for c in xrange(0, 3):
+            if len(str(l[c])) > clen[c]:
+                clen[c] = len(str(l[c]))
+    line_spec = "{{0:<{1}s}}{0}{{1:<{2}s}}{0}{{2:<{3}s}}\n".format(' ' * 3, clen[0], clen[1], clen[2])
+
+    # print the lines
+    for l in lines:
+        if len(l) > 3 and l[3] == True:
+            s += red(line_spec.format(DIFF_MARKER + l[0], str(l[1]), str(l[2])))
+        else:
+            if onlydifferent:
+                continue
+            s += line_spec.format(l[0], str(l[1]), str(l[2]))
+    return s
+
+def pretty_diff_list(title, oA, oB):
+    """
+    Generate a pretty diff of two dicts.
+
+    :param title: the title/heading for the line
+    :type title: string
+    :param oA: first object
+    :param oB: second object
+    :returns: list of lines, each a list of 3 columns
+    :rtype: list of lists
+    """
+    lines = []
+    items = set.union(set(oA), set(oB))
+    for i in sorted(items):
+        if i in oA and i in oB:
+            lines.append(['', i, i])
+        elif i in oA:
+            lines.append(['', i, MISSING_ITEM, True])
+        elif i in oB:
+            lines.append(['', MISSING_ITEM, i, True])
+    return lines
+
+def pretty_diff_str(title, oA, oB):
+    """
+    Generate a pretty diff of two dicts.
+
+    :param title: the title/heading for the line
+    :type title: string
+    :param oA: first object
+    :param oB: second object
+    :returns: list of lines, each a list of 3 columns
+    :rtype: list of lists
+    """
+    if oA != oB:
+        return [[title, oA, oB, True]]
+    return [[title, oA, oB]]
+
+def pretty_diff_dict(title, oA, oB):
+    """
+    Generate a pretty diff of two dicts.
+
+    :param title: the title/heading for the line
+    :type title: string
+    :param oA: first object
+    :param oB: second object
+    :returns: list of lines, each a list of 3 columns
+    :rtype: list of lists
+    """
+    lines = [[title, '', '']]
+
+    keys = set.union(set(oA.keys()), set(oB.keys()))
+
+    for k in sorted(keys):
+        if k in oA and k in oB:
+            if oA[k] == oB[k]:
+                lines.append([k, oA[k], oB[k]])
+            else:
+                lines.append([k, oA[k], oB[k], True])
+        elif k in oA:
+            lines.append([k, oA[k], MISSING_ITEM, True])
+        else:
+            lines.append([k, MISSING_ITEM, oB[k], True])
+
+    return lines
+
+def pretty_diff_obj(title, oA, oB):
+    """
+    Generate a pretty diff of two objects (actually just
+    dict, list or string) of lines suitable for use in pretty_diff_dicts()
+
+    This method is a pass-through to
+    pretty_diff_(dict|string|list)
+    depending on the input type.
+
+    :param title: the title/heading for the line
+    :type title: string
+    :param oA: first object
+    :param oB: second object
+    :returns: list of lines, each a list of 3 columns
+    :rtype: list of lists
+    """
+    if type(oA) == type({}) or type(oB) == type({}):
+        return pretty_diff_dict(title, oA, oB)
+    elif type(oA) == type("") or type(oB) == type("") or type(oA) == type(u"") or type(oB) == type(u""):
+        return pretty_diff_str(title, oA, oB)
+    else:
+        return pretty_diff_list(title, oA, oB)
+    return []
+
+def pretty_diff(title, titleA, dictA, titleB, dictB, onlydifferent=False):
+    """
+    Generate a "pretty" printable diff of two Nodes or Groups
+    containing arbitrarily deep dict, list or string items.
+
+    Intended to be used for the "text" dicts in migrate_group()
+    and migrate_node().
+
+    :param title: overall title of the diff
+    :type title: string
+    :param titleA: title of the first dict
+    :type titleA: string
+    :param dictA: the first dict
+    :type dictA: dict
+    :param titleB: title of the second dict
+    :type titleB: string
+    :param dictB: the second dict
+    :type dictB: dict
+    :param onlydifferent: only output differing lines
+    :type onlydifferent: boolean
+    :returns: multi-line string, columnar diff of dicts
+    :rtype: string
+    """
+    s = "Diff of %s\n" % title
+    lines = []
+    lines.append(['', titleA, titleB])
+    lines.append(['', '-' * len(titleA), '-' * len(titleB)])
+
+    lines.append(['name', dictA.get('name', '<none>'), dictB.get('name', '<none>')])
+    lines.append(['id', dictA.get('id', '<none>'), dictB.get('id', '<none>')])
+    lines.append(['description', dictA.get('description', '<none>'), dictB.get('description', '<none>')])
+    dictA.pop('name', None)
+    dictA.pop('id', None)
+    dictA.pop('description', None)
+    dictB.pop('name', None)
+    dictB.pop('id', None)
+    dictB.pop('description', None)
+    lines.append(['', '', ''])
+
+    k = set.union(set(dictA.keys()), set(dictB.keys()))
+
+    for p in sorted(k):
+        lines.append([p.capitalize() + ':', '', ''])
+        lines.extend(pretty_diff_obj('', dictA.get(p), dictB.get(p)))
+        #lines.append(['', '', ''])
+
+    s += print_columns(lines, onlydifferent=onlydifferent)
+    return s
+
+def get_nm_node_yaml(nm_host, node_name, ssl_verify=False, verbose=False):
+    """
+    Get the raw ENC YAML for a given node
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param node_name: name of the node to get YAML for
+    :type node_name: string
+    :param ssl_verify: whether or not to verify SSL certificate, default False
+    :type ssl_verify: boolean
+    :rtype: string
+    :returns: raw YAML string, or None
+    """
+    nm_url = "http://%s/enc/puppet/%s" % (nm_host, node_name)
+    r = requests.get(nm_url, headers={'Accept': 'text/yaml'}, verify=ssl_verify)
+    if r.status_code == 200:
+        return r.content
+    return None
+
+def get_dashboard_node_yaml(url, ssl_verify=False, verbose=False):
+    """
+    Given the full URL to a Puppet Dashboard node YAML file,
+    return the content of the YAML file as a string.
+
+    :param url: full URL to Dashboard node yaml
+    :type url: string
+    :param ssl_verify: whether or not to verify SSL certificate, default False
+    :type ssl_verify: boolean
+    :rtype: string
+    :returns: raw YAML string, or None
+    """
+    r = requests.get(url, headers={'Accept': 'text/yaml'}, verify=ssl_verify)
+    if r.status_code == 200:
+        return r.content
+    return None
+
 def get_json(url):
     """
     uses requests to GET and return deserialized json
@@ -73,13 +294,15 @@ def get_nm_group_params(nm_host):
     r = {}
     j = get_json("http://%s/enc/parameters/groups/" % nm_host)
     for o in j:
+        if o['paramvalue'] is not None:
+            o['paramvalue'] = clean_value(o['paramvalue'])
         r[o['id']] = o
     return r
 
 def get_nm_group(nm_host, gname=None, gid=None, groupnames=None):
     """
     Return a dict of information about a group
-    in NM, by either name or ID. If fname is specified,
+    in NM, by either name or ID. If gname is specified,
     it will be resolved to the id.
 
     groupnames, if specified, is the output dict from get_group_names();
@@ -227,7 +450,7 @@ def add_param_to_group(nm_host, gid, pname, pval, dry_run=False):
     :returns: True on success or False on failure
     :rtype: boolean
     """
-    if pval.strip() == "" or pval == "" or pval == "''":
+    if isinstance(pval, basestring) and (pval.strip() == "" or pval == "" or pval == "''"):
         pval = None
     payload = {'group': gid, 'paramkey': pname, 'paramvalue': pval}
     url = "http://%s/enc/parameters/groups/" % nm_host
@@ -262,6 +485,247 @@ def add_class_to_group(nm_host, gid, classname, classparams=None, dry_run=False)
     print("ERROR: add_class_to_group got status code %d" % status_code)
     return False
 
+def get_node_names(nm_host):
+    """
+    Return a dict of nodes in the NM instance,
+    id => hostname
+
+    :param nm_host: NodeMeister hostname/IP
+    :type nm_host: string
+    :rtype: dict
+    :returns: NM nodes, dict of the form {id<int>: hostname<string>}
+    """
+    j = get_json("http://%s/enc/nodes/" % nm_host)
+    names = {}
+    for n in j:
+        names[n['id']] = n['hostname']
+    return names
+
+def get_nm_node_id(nm_host, hostname, nodenames=None, dry_run=False):
+    """
+    Get the node ID of a node specified by hostname
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param hostname: hostname of the node
+    :type hostname: string
+    :param nodenames: dict of nodes as returned by get_node_names()
+    :type nodenames: dict
+    :returns: int ID of the group or False on failure
+    :rtype: int or False
+    """
+    if dry_run:
+        return 0
+    if nodenames is None:
+        nodenames = get_node_names(nm_host)
+    for n in nodenames:
+        if nodenames[n] == hostname:
+            return n
+    return False
+
+def get_nm_node(nm_host, hostname=None, node_id=None, nodenames=None):
+    """
+    Return a dict of information about a node
+    in NM, by either name or ID. If nodename is specified,
+    it will be resolved to the id.
+
+    nodenames, if specified, is the output dict from get_node_names();
+    if it is not specified, get_node_names() will be called internally.
+
+    :param nm_host: NodeMeister hostname/IP
+    :type nm_host: string
+    :param hostname: name of node to get
+    :type hostname: string
+    :param node_id: ID of node to get, overrides hostname
+    :type node_id: int
+    :param nodenames: output of get_node_names(), to prevent calling it again if we already have it
+    :type nodenames: dict
+    :rtype: dict
+    :returns: unserialized JSON dict representing the specified group, of the form:
+      {'hostname': <string>, 'parameters': [<param IDs>], 'classes': [<class IDs>], 'parents': [<group IDs>],
+      'groups': [<group IDs>], 'id': <int>, 'description': <string>}
+    """
+    if node_id is None and hostname is None:
+        raise ValueError("get_nm_node called without hostname or node_id")
+
+    if node_id is None:
+        if nodenames is None:
+            nodenames = get_node_names(nm_host)
+        for n in nodenames:
+            if nodenames[n] == hostname:
+                node_id = n
+        if node_id is None:
+            return {}
+
+    j = get_json("http://%s/enc/nodes/%d/" % (nm_host, node_id))
+    return j
+
+def get_nm_node_classes(nm_host):
+    """
+    Return a dict of all node classes in NM,
+    with their id as the dict key.
+
+    :param nm_host: NodeMeister hostname/IP
+    :type nm_host: string
+    :rtype: dict
+    :returns: NM node classes, dict of the form:
+      {id<int>: {'classname': <string>, 'classparams': <string or None>, 'node': <int>, 'id': <int>}
+    """
+    r = {}
+    j = get_json("http://%s/enc/classes/nodes/" % nm_host)
+    for o in j:
+        r[o['id']] = o
+    return r
+
+def get_nm_node_params(nm_host):
+    """
+    Return a dict of all node params in NM,
+    with their id as the dict key.
+
+    :param nm_host: NodeMeister hostname/IP
+    :type nm_host: string
+    :rtype: dict
+    :returns: NM node params, dict of the form:
+      {id<int>: {'paramkey': <string>, 'paramvalue': <string or None>, 'node': <int>, 'id': <int>}
+    """
+    r = {}
+    j = get_json("http://%s/enc/parameters/nodes/" % nm_host)
+    for o in j:
+        r[o['id']] = o
+    return r
+
+def add_node(nm_host, hostname, description, groups=None, dry_run=False):
+    """
+    add a node to NodeMeister
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param hostname: hostname of the new node
+    :type hostname: string
+    :param description: description of the new node
+    :type description: string
+    :param groups: groups that this node is in
+    :type groups: list of int IDs
+    :param dry_run: if True, only print what would be done, do not make any changes
+    :type dry_run: boolean
+    :returns: int ID of the new node on success or False on failure
+    :rtype: int or False
+    """
+    payload = {'hostname': hostname, 'description': description}
+    if groups is not None:
+        payload['groups'] = groups
+    url = "http://%s/enc/nodes/" % nm_host
+    status_code = do_post(url, payload, dry_run=dry_run)
+    if status_code == 201:
+        return get_nm_node_id(nm_host, hostname, dry_run=dry_run)
+    print("ERROR: add_node got status code %d" % status_code)
+    return False
+
+def add_param_to_node(nm_host, node_id, pname, pval, dry_run=False):
+    """
+    add a parameter to a node in NodeMeister
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param node_id: numeric ID of the node to add param to
+    :type node_id: int
+    :param pname: parameter name
+    :type pname: string
+    :param pval: parameter value
+    :type pval: string
+    :param dry_run: if True, only print what would be done, do not make any changes
+    :type dry_run: boolean
+    :returns: True on success or False on failure
+    :rtype: boolean
+    """
+    if pval.strip() == "" or pval == "" or pval == "''":
+        pval = None
+    payload = {'node': node_id, 'paramkey': pname, 'paramvalue': pval}
+    url = "http://%s/enc/parameters/nodes/" % nm_host
+    status_code = do_post(url, payload, dry_run=dry_run)
+    if status_code == 201:
+        return True
+    print("ERROR: add_param_to_node got status code %d" % status_code)
+    return False
+
+def add_class_to_node(nm_host, node_id, classname, classparams=None, dry_run=False):
+    """
+    add a class to a node in NodeMeister
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param node_id: numeric ID of the node to add param to
+    :type node_id: int
+    :param classname: class name
+    :type classname: string
+    :param classparams: class parameters, default None
+    :type classparams: string or None
+    :param dry_run: if True, only print what would be done, do not make any changes
+    :type dry_run: boolean
+    :returns: True on success or False on failure
+    :rtype: boolean
+    """
+    payload = {'node': node_id, 'classname': classname, 'classparams': classparams}
+    url = "http://%s/enc/classes/nodes/" % nm_host
+    status_code = do_post(url, payload, dry_run=dry_run)
+    if status_code == 201:
+        return True
+    print("ERROR: add_class_to_node got status code %d" % status_code)
+    return False
+
+def get_name_for_class_exclusion(nm_host, class_exclusion_id, verbose):
+    """
+    Get the excluded class name for a given ClassExclusion ID.
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param class_exclusion_id: numeric ID of the class exclusion
+    :type class_exclusion_id: int
+    :returns: string name of class, or False on faliure
+    :rtype: string or False
+    """
+    r = {}
+    j = get_json("http://%s/enc/exclusions/classes/" % nm_host)
+    if j is None:
+        return False
+    for o in j:
+        if o['id'] == class_exclusion_id:
+            return o['exclusion']
+    return False
+
+def add_node_class_exclusion(nm_host, node_id, classname, dry_run=False, verbose=False):
+    """
+    add a class exclusion to a node in NodeMeister
+
+    :param nm_host: NodeMeister hostname or IP
+    :type nm_host: string
+    :param node_id: numeric ID of the node to add param to
+    :type node_id: int
+    :param classname: class name to exclude
+    :type classname: string
+    :param dry_run: if True, only print what would be done, do not make any changes
+    :type dry_run: boolean
+    :returns: True on success or False on failure
+    :rtype: boolean
+    """
+    payload = {'node': node_id, 'exclusion': classname}
+    url = "http://%s/enc/exclusions/classes/" % nm_host
+    status_code = do_post(url, payload, dry_run=dry_run)
+    if status_code == 201:
+        return True
+    print("ERROR: add_node_class_exclusion got status code %d" % status_code)
+    return False
+
+def clean_value(v, debug=False):
+    """
+    Strip bad characters off of values
+    """
+    if debug:
+        print("clean_value '%s'" % v)
+    if type(v) == type("") or type(v) == type(u""):
+        v = v.strip('"\\')
+    return v
+
 def do_post(url, payload, dry_run=False):
     """
     Do a POST request with Requests, return the status code.
@@ -281,3 +745,146 @@ def do_post(url, payload, dry_run=False):
         return 201
     r = requests.post(url, data=anyjson.serialize(payload), headers=headers)
     return r.status_code
+
+def clone_nodemeister_node(nm_host, dst_name, src_name, munge_res, group_replace=None, noop=False, verbose=False):
+    """
+    Clone a node in nodemeister, munging all parameters and class params through munge_re,
+    a list of lists, each having 2 elements, a regex and a string to replace matches with.
+
+    group_replace is a hash of old_group_id => new_group_id to replace when creating the new node
+    """
+    nodes = get_node_names(nm_host)
+    dst_node_id = get_nm_node_id(nm_host, dst_name, nodenames=nodes)
+    if dst_node_id is not False:
+        print("ERROR: node %s already exists in NodeMeister with id %d." % (dst_name, dst_node_id))
+        return False
+
+    src_node = get_nm_node(nm_host, hostname=src_name, nodenames=nodes)
+    if len(src_node) == 0:
+        print("ERROR: could not find source node %s" % src_name)
+        return False
+    if verbose:
+        print("Got source node id: %d" % src_node['id'])
+        print("\t%s" % src_node)
+
+    classes = get_nm_node_classes(nm_host)
+    params = get_nm_node_params(nm_host)
+
+    # add to the right groups
+    groups = []
+    for g in src_node['groups']:
+        if group_replace is not None:
+            if g in group_replace:
+                if verbose:
+                    print("  changing group %d to %d (group_replace)" % (g, group_replace[g]))
+                g = group_replace[g]
+        groups.append(g)
+
+    # TODO - these are going to be difficult because we need to resolve IDs from source to names,
+    #        and then map to the correct IDs for our new node
+
+    # add excluded groups
+    # add excluded params
+
+    node_id = add_node(nm_host, dst_name, "imported by %s" % __file__, groups=groups, dry_run=noop)
+    if node_id is False:
+        print("ERROR adding node in Nodemeister.")
+        return False
+    else:
+        print("Node added to NodeMeister with id %d" % node_id)
+
+    ok = True
+    # add excluded classes
+    for c in src_node['excluded_classes']:
+        c_name = get_name_for_class_exclusion(nm_host, c, verbose=verbose)
+        if verbose:
+            print("excluded class %s (%d)" % (c_name, c))
+        res = add_node_class_exclusion(nm_host, node_id, c_name, dry_run=noop, verbose=verbose)
+        if not res:
+            print("ERROR adding class exclusion of '%s' to node %d" % (c_name, node_id))
+            ok = False
+        if verbose:
+            print("\tadded class_exclusion of '%s' to group %d" % (c_name, node_id))
+
+    # add the params
+    for p in src_node['parameters']:
+        for (ptn, repl) in munge_re:
+            foo = re.sub(ptn, repl, src_node['parameters'][p])
+            if foo != src_node['parameters'][p] and verbose:
+                print("Munged value of '%s' from '%s' to '%s'" % (p, src_node['parameters'][p], foo))
+            src_node['parameters'][p] = foo
+        res = add_param_to_node(nm_host, node_id, p, src_node['parameters'][p], dry_run=noop)
+        if not res:
+            print("ERROR adding param %s with value '%s' to node %d" % (p, src_node['parameters'][p], node_id))
+            ok = False
+        if verbose:
+            print("\tadded param %s with value '%s' to group %d" % (p, src_node['parameters'][p], node_id))
+
+    if len(src_node['classes']) > 0:
+        print("ERROR: script does not yet migrate classes for nodes.")
+        ok = False
+
+    if ok is False:
+        return False
+    return node_id
+
+def clone_nodemeister_group(nm_host, dst_gname, src_gname, munge_re=None, noop=False, verbose=False):
+    """
+    Clone a group in nodemeister, munging all parameters and class params through munge_re,
+    a list of lists, each having 2 elements, a regex and a string to replace matches with.
+    """
+    group_names = get_group_names(nm_host)
+    dst_gid = get_nm_group_id(nm_host, dst_gname, groups=group_names)
+    if dst_gid is not False:
+        print("ERROR: group %s already exists in NodeMeister with id %d." % (dst_gname, dst_gid))
+        return False
+
+    src_group = get_nm_group(nm_host, gname=src_gname, groupnames=group_names)
+    if len(src_group) == 0:
+        print("ERROR: could not find source group %s" % src_gname)
+        return False
+    if verbose:
+        print("Got source group id: %d" % src_group['id'])
+        print("\t%s" % src_group)
+    classes = get_nm_group_classes(nm_host)
+    params = get_nm_group_params(nm_host)
+    interp_src_group = interpolate_group(src_group, classes, params, group_names)
+    #if verbose:
+    #    print("\tInterpolated: %s" % interp_src_group)
+
+    groups = []
+    for foo in src_group['groups']:
+        bar = get_nm_group_id(nm_host, foo, groups=group_names)
+        if bar:
+            groups.append(bar)
+
+    # ok, try adding the group
+    gid = add_group(nm_host, dst_gname, "imported by %s" % __file__, groups=groups, dry_run=noop)
+    if gid is False:
+        print("ERROR adding group in Nodemeister.")
+        return False
+    else:
+        print("Group added to NodeMeister with id %d" % gid)
+
+    ok = True
+    # add the params
+    for p in src_group['parameters']:
+        for (ptn, repl) in munge_re:
+            foo = re.sub(ptn, repl, src_group['parameters'][p])
+            if foo != src_group['parameters'][p] and verbose:
+                print("Munged value of '%s' from '%s' to '%s'" % (p, src_group['parameters'][p], foo))
+            src_group['parameters'][p] = foo
+        res = add_param_to_group(nm_host, gid, p, src_group['parameters'][p], dry_run=noop)
+        if not res:
+            print("ERROR adding param %s with value '%s' to group %d" % (p, src_group['parameters'][p], gid))
+            ok = False
+        if verbose:
+            print("added param %s with value '%s' to group %d" % (p, src_group['parameters'][p], gid))
+
+    if len(src_group['classes']) > 0:
+        print("ERROR: script does not yet migrate classes for groups.")
+        ok = False
+
+    if ok is False:
+        return False
+    return gid
