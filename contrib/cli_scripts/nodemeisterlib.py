@@ -5,6 +5,7 @@ NodeMeister REST API.
 
 import requests
 import anyjson
+import re
 
 MISSING_ITEM = '-'
 DIFF_MARKER = ">"
