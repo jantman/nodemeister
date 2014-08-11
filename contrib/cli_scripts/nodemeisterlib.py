@@ -6,9 +6,17 @@ NodeMeister REST API.
 import requests
 import anyjson
 import re
+import logging
 
 MISSING_ITEM = '-'
 DIFF_MARKER = ">"
+
+try:
+    logger.debug("importing nodemeisterlib")
+except NameError:
+    FORMAT = "[%(levelname)s %(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
+    logging.basicConfig(level=logging.ERROR, format=FORMAT)
+    logger = logging.getLogger(__name__)
 
 def red(text):
     """
@@ -209,6 +217,8 @@ def get_nm_node_yaml(nm_host, node_name, ssl_verify=False, verbose=False):
     r = requests.get(nm_url, headers={'Accept': 'text/yaml'}, verify=ssl_verify)
     if r.status_code == 200:
         return r.content
+    else:
+        logger.error("got status code {s} for {u}".format(s=r.status_code, u=nm_url))
     return None
 
 def get_dashboard_node_yaml(url, ssl_verify=False, verbose=False):
@@ -226,6 +236,8 @@ def get_dashboard_node_yaml(url, ssl_verify=False, verbose=False):
     r = requests.get(url, headers={'Accept': 'text/yaml'}, verify=ssl_verify)
     if r.status_code == 200:
         return r.content
+    else:
+        logger.error("got status code {s} for {u}".format(s=r.status_code, u=url))
     return None
 
 def get_json(url):
@@ -246,6 +258,7 @@ def get_json(url):
         j = anyjson.deserialize(r.content)
         return j
     except:
+        logger.error("could not deserialize JSON for {u} (got status code {s})".format(s=r.status_code, u=url))
         return None
 
 def get_group_names(nm_host):
@@ -409,7 +422,7 @@ def add_group(nm_host, name, description, parents=None, groups=None, dry_run=Fal
     status_code = do_post(url, payload, dry_run=dry_run)
     if status_code == 201:
         return get_nm_group_id(nm_host, name, dry_run=dry_run)
-    print("ERROR: add_group got status code %d" % status_code)
+    logger.error("ERROR: add_group got status code %d" % status_code)
     return False
 
 def get_nm_group_id(nm_host, name, groups=None, dry_run=False):
@@ -458,7 +471,7 @@ def add_param_to_group(nm_host, gid, pname, pval, dry_run=False):
     status_code = do_post(url, payload, dry_run=dry_run)
     if status_code == 201:
         return True
-    print("ERROR: add_param_to_group got status code %d" % status_code)
+    logger.error("ERROR: add_param_to_group got status code %d" % status_code)
     return False
 
 def add_class_to_group(nm_host, gid, classname, classparams=None, dry_run=False):
@@ -483,7 +496,7 @@ def add_class_to_group(nm_host, gid, classname, classparams=None, dry_run=False)
     status_code = do_post(url, payload, dry_run=dry_run)
     if status_code == 201:
         return True
-    print("ERROR: add_class_to_group got status code %d" % status_code)
+    logger.error("ERROR: add_class_to_group got status code %d" % status_code)
     return False
 
 def get_node_names(nm_host):
@@ -522,6 +535,7 @@ def get_nm_node_id(nm_host, hostname, nodenames=None, dry_run=False):
     for n in nodenames:
         if nodenames[n] == hostname:
             return n
+    logger.error("could not find node ID for {h}".format(h=hostname))
     return False
 
 def get_nm_node(nm_host, hostname=None, node_id=None, nodenames=None):
@@ -556,6 +570,7 @@ def get_nm_node(nm_host, hostname=None, node_id=None, nodenames=None):
             if nodenames[n] == hostname:
                 node_id = n
         if node_id is None:
+            logger.error("could not find hode with hostname {h}".format(h=hostname))
             return {}
 
     j = get_json("http://%s/enc/nodes/%d/" % (nm_host, node_id))
@@ -616,10 +631,11 @@ def add_node(nm_host, hostname, description, groups=None, dry_run=False):
     if groups is not None:
         payload['groups'] = groups
     url = "http://%s/enc/nodes/" % nm_host
+    logger.debug("adding node {h}".format(h=hostname))
     status_code = do_post(url, payload, dry_run=dry_run)
     if status_code == 201:
         return get_nm_node_id(nm_host, hostname, dry_run=dry_run)
-    print("ERROR: add_node got status code %d" % status_code)
+    logger.error("ERROR: add_node got status code %d" % status_code)
     return False
 
 def add_param_to_node(nm_host, node_id, pname, pval, dry_run=False):
@@ -643,10 +659,11 @@ def add_param_to_node(nm_host, node_id, pname, pval, dry_run=False):
         pval = None
     payload = {'node': node_id, 'paramkey': pname, 'paramvalue': pval}
     url = "http://%s/enc/parameters/nodes/" % nm_host
+    logger.debug("adding param '{pname}' to node {n} with val: {pval}".format(n=node_id, pname=pname, pval=pval))
     status_code = do_post(url, payload, dry_run=dry_run)
     if status_code == 201:
         return True
-    print("ERROR: add_param_to_node got status code %d" % status_code)
+    logger.error("ERROR: add_param_to_node got status code %d" % status_code)
     return False
 
 def add_class_to_node(nm_host, node_id, classname, classparams=None, dry_run=False):
@@ -668,10 +685,11 @@ def add_class_to_node(nm_host, node_id, classname, classparams=None, dry_run=Fal
     """
     payload = {'node': node_id, 'classname': classname, 'classparams': classparams}
     url = "http://%s/enc/classes/nodes/" % nm_host
+    logger.debug("adding class '{cn}' to node {n} with params: {cp}".format(n=node_id, cn=classname, cp=classparams))
     status_code = do_post(url, payload, dry_run=dry_run)
     if status_code == 201:
         return True
-    print("ERROR: add_class_to_node got status code %d" % status_code)
+    logger.error("ERROR: add_class_to_node got status code %d" % status_code)
     return False
 
 def get_name_for_class_exclusion(nm_host, class_exclusion_id, verbose):
@@ -711,10 +729,11 @@ def add_node_class_exclusion(nm_host, node_id, classname, dry_run=False, verbose
     """
     payload = {'node': node_id, 'exclusion': classname}
     url = "http://%s/enc/exclusions/classes/" % nm_host
+    logger.debug("adding class exclusion for '{cn}' to node {n}".format(n=node_id, cn=classname))
     status_code = do_post(url, payload, dry_run=dry_run)
     if status_code == 201:
         return True
-    print("ERROR: add_node_class_exclusion got status code %d" % status_code)
+    logger.error("ERROR: add_node_class_exclusion got status code %d" % status_code)
     return False
 
 def clean_value(v, debug=False):
@@ -742,7 +761,7 @@ def do_post(url, payload, dry_run=False):
     """
     headers = {'content-type': 'application/json'}
     if dry_run:
-        print("=> DRY RUN: do_post to url %s - payload:\n\t%s\n" % (url, payload))
+        logger.warning("DRY RUN: do_post to url %s - payload:\n\t%s\n" % (url, payload))
         return 201
     r = requests.post(url, data=anyjson.serialize(payload), headers=headers)
     return r.status_code
@@ -757,16 +776,15 @@ def clone_nodemeister_node(nm_host, dst_name, src_name, munge_res, group_replace
     nodes = get_node_names(nm_host)
     dst_node_id = get_nm_node_id(nm_host, dst_name, nodenames=nodes)
     if dst_node_id is not False:
-        print("ERROR: node %s already exists in NodeMeister with id %d." % (dst_name, dst_node_id))
+        logger.error("ERROR: node %s already exists in NodeMeister with id %d." % (dst_name, dst_node_id))
         return False
 
     src_node = get_nm_node(nm_host, hostname=src_name, nodenames=nodes)
     if len(src_node) == 0:
-        print("ERROR: could not find source node %s" % src_name)
+        logger.error("ERROR: could not find source node %s" % src_name)
         return False
     if verbose:
-        print("Got source node id: %d" % src_node['id'])
-        print("\t%s" % src_node)
+        logger.debug("Got source node id: {n}\n{src}".format(n=src_node['id'], src=src_node))
 
     classes = get_nm_node_classes(nm_host)
     params = get_nm_node_params(nm_host)
@@ -777,7 +795,7 @@ def clone_nodemeister_node(nm_host, dst_name, src_name, munge_res, group_replace
         if group_replace is not None:
             if g in group_replace:
                 if verbose:
-                    print("  changing group %d to %d (group_replace)" % (g, group_replace[g]))
+                    logger.debug("  changing group %d to %d (group_replace)" % (g, group_replace[g]))
                 g = group_replace[g]
         groups.append(g)
 
@@ -789,40 +807,40 @@ def clone_nodemeister_node(nm_host, dst_name, src_name, munge_res, group_replace
 
     node_id = add_node(nm_host, dst_name, "imported by %s" % __file__, groups=groups, dry_run=noop)
     if node_id is False:
-        print("ERROR adding node in Nodemeister.")
+        logger.error("ERROR adding node in Nodemeister.")
         return False
     else:
-        print("Node added to NodeMeister with id %d" % node_id)
+        logger.info("Node added to NodeMeister with id %d" % node_id)
 
     ok = True
     # add excluded classes
     for c in src_node['excluded_classes']:
         c_name = get_name_for_class_exclusion(nm_host, c, verbose=verbose)
         if verbose:
-            print("excluded class %s (%d)" % (c_name, c))
+            logger.debug("excluded class %s (%d)" % (c_name, c))
         res = add_node_class_exclusion(nm_host, node_id, c_name, dry_run=noop, verbose=verbose)
         if not res:
-            print("ERROR adding class exclusion of '%s' to node %d" % (c_name, node_id))
+            logger.error("ERROR adding class exclusion of '%s' to node %d" % (c_name, node_id))
             ok = False
         if verbose:
-            print("\tadded class_exclusion of '%s' to group %d" % (c_name, node_id))
+            logger.info("added class_exclusion of '%s' to group %d" % (c_name, node_id))
 
     # add the params
     for p in src_node['parameters']:
         for (ptn, repl) in munge_re:
             foo = re.sub(ptn, repl, src_node['parameters'][p])
             if foo != src_node['parameters'][p] and verbose:
-                print("Munged value of '%s' from '%s' to '%s'" % (p, src_node['parameters'][p], foo))
+                logger.debug("Munged value of '%s' from '%s' to '%s'" % (p, src_node['parameters'][p], foo))
             src_node['parameters'][p] = foo
         res = add_param_to_node(nm_host, node_id, p, src_node['parameters'][p], dry_run=noop)
         if not res:
-            print("ERROR adding param %s with value '%s' to node %d" % (p, src_node['parameters'][p], node_id))
+            logger.error("ERROR adding param %s with value '%s' to node %d" % (p, src_node['parameters'][p], node_id))
             ok = False
         if verbose:
-            print("\tadded param %s with value '%s' to group %d" % (p, src_node['parameters'][p], node_id))
+            logger.info("\tadded param %s with value '%s' to group %d" % (p, src_node['parameters'][p], node_id))
 
     if len(src_node['classes']) > 0:
-        print("ERROR: script does not yet migrate classes for nodes.")
+        logger.critical("ERROR: script does not yet migrate classes for nodes.")
         ok = False
 
     if ok is False:
@@ -837,16 +855,15 @@ def clone_nodemeister_group(nm_host, dst_gname, src_gname, munge_re=None, noop=F
     group_names = get_group_names(nm_host)
     dst_gid = get_nm_group_id(nm_host, dst_gname, groups=group_names)
     if dst_gid is not False:
-        print("ERROR: group %s already exists in NodeMeister with id %d." % (dst_gname, dst_gid))
+        logger.error("ERROR: group %s already exists in NodeMeister with id %d." % (dst_gname, dst_gid))
         return False
 
     src_group = get_nm_group(nm_host, gname=src_gname, groupnames=group_names)
     if len(src_group) == 0:
-        print("ERROR: could not find source group %s" % src_gname)
+        logger.error("ERROR: could not find source group %s" % src_gname)
         return False
     if verbose:
-        print("Got source group id: %d" % src_group['id'])
-        print("\t%s" % src_group)
+        logger.debug("Got source group id: {n}\n{src}".format(n=src_group['id'], src=src_group))
     classes = get_nm_group_classes(nm_host)
     params = get_nm_group_params(nm_host)
     interp_src_group = interpolate_group(src_group, classes, params, group_names)
@@ -862,10 +879,10 @@ def clone_nodemeister_group(nm_host, dst_gname, src_gname, munge_re=None, noop=F
     # ok, try adding the group
     gid = add_group(nm_host, dst_gname, "imported by %s" % __file__, groups=groups, dry_run=noop)
     if gid is False:
-        print("ERROR adding group in Nodemeister.")
+        logger.error("ERROR adding group in Nodemeister.")
         return False
     else:
-        print("Group added to NodeMeister with id %d" % gid)
+        logger.info("Group added to NodeMeister with id %d" % gid)
 
     ok = True
     # add the params
@@ -873,19 +890,29 @@ def clone_nodemeister_group(nm_host, dst_gname, src_gname, munge_re=None, noop=F
         for (ptn, repl) in munge_re:
             foo = re.sub(ptn, repl, src_group['parameters'][p])
             if foo != src_group['parameters'][p] and verbose:
-                print("Munged value of '%s' from '%s' to '%s'" % (p, src_group['parameters'][p], foo))
+                logger.debug("Munged value of '%s' from '%s' to '%s'" % (p, src_group['parameters'][p], foo))
             src_group['parameters'][p] = foo
         res = add_param_to_group(nm_host, gid, p, src_group['parameters'][p], dry_run=noop)
         if not res:
-            print("ERROR adding param %s with value '%s' to group %d" % (p, src_group['parameters'][p], gid))
+            logger.error("ERROR adding param %s with value '%s' to group %d" % (p, src_group['parameters'][p], gid))
             ok = False
         if verbose:
-            print("added param %s with value '%s' to group %d" % (p, src_group['parameters'][p], gid))
+            logger.info("added param %s with value '%s' to group %d" % (p, src_group['parameters'][p], gid))
 
-    if len(src_group['classes']) > 0:
-        print("ERROR: script does not yet migrate classes for groups.")
-        ok = False
+    for c in src_group['classes']:
+        for (ptn, repl) in munge_re:
+            foo = re.sub(ptn, repl, src_group['classes'][c])
+            if foo != src_group['classes'][c] and verbose:
+                logger.debug("Munged value of '%s' from '%s' to '%s'" % (c, src_group['classes'][c], foo))
+            src_group['classes'][c] = foo
+        res = add_class_to_group(nm_host, gid, c, src_group['classes'][c], dry_run=noop)
+        if not res:
+            logger.error("ERROR adding class %s with value '%s' to group %d" % (c, src_group['classes'][c], gid))
+            ok = False
+        if verbose:
+            logger.info("added class %s with value '%s' to group %d" % (c, src_group['classes'][c], gid))
 
     if ok is False:
+        logger.critical("cloning group failed.")
         return False
     return gid
