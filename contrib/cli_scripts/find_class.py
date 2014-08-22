@@ -7,6 +7,7 @@ import os
 from optparse import OptionParser
 import logging
 import networkx as nx
+from collections import defaultdict
 
 from nodemeisterlib import get_json, get_node_names, get_group_names, get_nm_group_classes
 
@@ -16,11 +17,33 @@ logger = logging.getLogger(__name__)
 
 def format_output_text(result_dict):
     """ formats result_dict for textual (human-readable) output """
-    print(result_dict)
+    for host in result_dict:
+        print("#### {h} ####".format(h=host))
+        sources = defaultdict(list)
+        for node in result_dict[host]:
+            rn = result_dict[host][node]
+            if rn['_type'] == 'group':
+                k = "Group '{n}'".format(n=rn['_name'])
+            elif rn['_type'] == 'class':
+                k = "Direct (class '{n}')".format(n=rn['_name'])
+            else:
+                k = "{t} {n}".format(t=rn['_type'], n=rn['_name'])
+            sources[k].append(node)
+        for k in sorted(sources.keys()):
+            print(k)
+            for v in sorted(sources[k]):
+                print("\t{v}".format(v=v))
+    return True
 
 def format_output_files(result_dict):
     """ formats result_dict as one file per NM host, one hostname per line """
-    print(result_dict)
+    for host in result_dict:
+        fname = host
+        logger.warning("writing results for {h} to {f}".format(h=host, f=fname))
+        with open(fname, 'w') as fh:
+            for node in sorted(result_dict[host]):
+                fh.write("{n}\n".format(n=node))
+    return True
 
 def find_class(nm_hosts, class_name, out_format='text'):
     """
@@ -61,51 +84,66 @@ def class_to_node_graph(nm_host):
     groups = get_group_names(nm_host)
     logger.debug("getting group classes")
     group_classes = get_nm_group_classes(nm_host)
-    logger.debug("getting group json")
-    group_json = get_json("http://{nm_host}/enc/classes/groups".format(nm_host=nm_host))
 
     g = nx.DiGraph()
 
+    logger.debug("adding groups to graph")
+    for group in groups:
+        groupname = groups[group]
+        g_name = 'Group[{g}]'.format(g=groupname)
+        logger.debug("adding group {g} to graph".format(g=groupname))
+        g.add_node(g_name, _type='group', _name=groupname, _id=group)
+
     logger.debug("getting node json")
+    node_json = get_json("http://{nm_host}/enc/nodes".format(nm_host=nm_host))
+    logger.debug("adding node groups to graph")
+    for node in node_json:
+        nodename = node['hostname']
+        n_name = 'Node[{n}]'.format(n=nodename)
+        logger.debug("adding node {n} to graph".format(n=nodename))
+        g.add_node(n_name, _type='node', _name=nodename, _id=node['id'])
+        for g_id in node['groups']:
+            g_name = 'Group[{g}]'.format(g=groups[g_id])
+            logger.debug("adding edge {n} -> {g}".format(n=n_name, g=g_name))
+            g.add_edge(n_name, g_name)
+
+    logger.debug("getting node classes json")
     node_json = get_json("http://{nm_host}/enc/classes/nodes".format(nm_host=nm_host))
     logger.debug("adding nodes to graph")
     for node in node_json:
         nodename = nodes[node['node']]
         n_name = 'Node[{n}]'.format(n=nodename)
-        g.add_node(n_name, _type='node', _name=nodename, _id=node['id'])
-        logger.debug("adding node {n} to graph".format(n=nodename))
-        for cls_name in node['classname']:
-            cn_name = 'Class[{c}]'.format(c=cls_name)
-            try:
-                g.node[cn_name]
-            except KeyError:
-                g.add_node(cn_name, _type='class', _name=cls_name)
-                logger.debug("adding class {c} to graph".format(c=cls_name))
-            g.add_edge(cn_name, n_name)
+        cls_name = node['classname']
+        cn_name = 'Class[{c}]'.format(c=cls_name)
+        try:
+            g.node[cn_name]
+        except KeyError:
+            logger.debug("adding class {c} to graph".format(c=cls_name))
+            g.add_node(cn_name, _type='class', _name=cls_name)
+        logger.debug("adding edge {c} -> {n}".format(c=cn_name, n=n_name))
+        g.add_edge(n_name, cn_name)
 
-    logger.debug("searching group json")
-    for group in group_json:
-        groupname = groups[group['group']]
-        g_name = 'Group[{g}]'.format(g=groupname)
-        g.add_node(g_name, _type='group', _name=groupname, _id=node['id'])
-        logger.debug("adding group {g} to graph".format(g=groupname))
-        for cls_name in group['classname']:
-            raise SystemExit(cls_id)
-            cls_name = group_classes[cls_id]['classname']
-            cn_name = 'Class[{c}]'.format(c=cls_name)
-            try:
-                g.node[cn_name]
-            except KeyError:
-                g.add_node(cn_name, _type='class', _name=cls_name)
-                logger.debug("adding class {c} to graph".format(c=cls_name))
-            g.add_edge(g_name, cn_name)
+    logger.debug("adding group classes")
+    for gc in group_classes:
+        g_name = 'Group[{g}]'.format(g=groups[group_classes[gc]['group']])
+        c_name = 'Class[{c}]'.format(c=group_classes[gc]['classname'])
+        try:
+            g.node[c_name]
+        except KeyError:
+            logger.debug("adding class {c} to graph".format(c=group_classes[gc]['classname']))
+            g.add_node(c_name, _type='class', _name=group_classes[gc]['classname'])
+        logger.debug("adding edge {g} -> {c}".format(g=g_name, c=c_name))
+        g.add_edge(g_name, c_name)
 
+    logger.debug("getting group json")
+    group_json = get_json("http://{nm_host}/enc/groups/".format(nm_host=nm_host))
     logger.debug("adding group to group associations")
     for group in group_json:
-        groupname = groups[group['group']]
+        groupname = group['name']
         g_name = 'Group[{g}]'.format(g=groupname)
         for gg in group['groups']:
             gg_name = 'Group[{gg}]'.format(gg=groups[gg])
+            logger.debug("adding edge {g} -> {gg}".format(g=g_name, gg=gg_name))
             g.add_edge(g_name, gg_name)
 
     logger.debug("done creating graph")
@@ -122,6 +160,22 @@ def find_class_on_host(nm_host, class_name, out_format='text'):
     logger.info("checking for class '{c}' on nodemeister instance: {n}".format(n=nm_host, c=class_name))
     g = class_to_node_graph(nm_host)
 
+    c_name = 'Class[{c}]'.format(c=class_name)
+    try:
+        g.node[c_name]
+    except KeyError:
+        raise SystemExit("ERROR: class {c} not found anywhere in graph.".format(c=class_name))
+
+    logger.debug("searching graph for endpoints connected to {c}".format(c=c_name))
+
+    rg = g.reverse()
+
+    result = {}
+    endpoints = nx.algorithms.traversal.depth_first_search.dfs_predecessors(rg, c_name)
+    for e in endpoints:
+        if rg.node[e]['_type'] == 'node':
+            result[rg.node[e]['_name']] = rg.node[endpoints[e]]
+    return result
 
 def parse_opts_args(argv):
     """ parse options and arguments """
