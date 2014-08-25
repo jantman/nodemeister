@@ -19,9 +19,11 @@ def format_output_text(result_dict):
     """ formats result_dict for textual (human-readable) output """
     for host in result_dict:
         print("#### {h} ####".format(h=host))
+        for c in result_dict[host]['not_found']:
+            logger.error("Class '{c}' not found anywhere on host {h}".format(h=host, c=c))
         sources = defaultdict(list)
-        for node in result_dict[host]:
-            rn = result_dict[host][node]
+        for node in result_dict[host]['endpoints']:
+            rn = result_dict[host]['endpoints'][node]
             if rn['_type'] == 'group':
                 k = "Group '{n}'".format(n=rn['_name'])
             elif rn['_type'] == 'class':
@@ -39,27 +41,35 @@ def format_output_files(result_dict):
     """ formats result_dict as one file per NM host, one hostname per line """
     for host in result_dict:
         fname = host
+        nf_fname = "{f}_not_found".format(f=fname)
         logger.warning("writing results for {h} to {f}".format(h=host, f=fname))
         with open(fname, 'w') as fh:
-            for node in sorted(result_dict[host]):
+            for node in sorted(result_dict[host]['endpoints']):
                 fh.write("{n}\n".format(n=node))
+        logger.warning("writing not_found results for {h} to {f}".format(h=host, f=nf_fname))
+        with open(nf_fname, 'w') as fh:
+            for c in result_dict[host]['not_found']:
+                logger.error("Class '{c}' not found anywhere on host {h}".format(h=host, c=c))
+                fh.write("{c}\n".format(c=c))
     return True
 
-def find_class(nm_hosts, class_name, out_format='text'):
+def find_classes(nm_hosts, class_names, out_format='text'):
     """
-    find all uses of a specified class on the specified NodeMeister host(s)
+    find all uses of a specified class(es) on the specified NodeMeister host(s)
 
     :param nm_hosts: list of NodeMeister hostname/FQDN/IP(s) to search
     :type nm_hosts: list of strings
+    :param class_names: list of class names to search for
+    :type class_names: list
     """
-    logger.info("searching for class {c}".format(c=class_name))
+    logger.info("searching for class(es) {c}".format(c=class_names))
     formats = {'text': format_output_text, 'files': format_output_files}
     if out_format not in formats.keys():
         raise SystemExit("ERROR: output format must be one of: {f}".format(f=", ".join(formats)))
 
     results = {}
     for host in nm_hosts:
-        results[host] = find_class_on_host(host, class_name)
+        results[host] = find_classes_on_host(host, class_names)
 
     logger.info("finished searching; formatting output as '{o}'".format(o=out_format))
     formats[out_format](results)
@@ -149,37 +159,39 @@ def class_to_node_graph(nm_host):
     logger.debug("done creating graph")
     return g
 
-def find_class_on_host(nm_host, class_name, out_format='text'):
+def find_classes_on_host(nm_host, class_names, out_format='text'):
     """
-    find all uses of a class on a given nodemeister host
+    find all uses of a class(es) on a given nodemeister host
 
-    returns a dict with keys 'groups', 'nodes' and 'all_nodes' where:
-    'nodes' is a dict (id => name) of nodes with the class directly applied
-    'all_nodes' is a dict (id => name) of ALL nodes with the class applied (directly or through groups)
+    returns a dict with two keys, 'endpoints' (a dict of node to endpoint) and
+    'not_found', a list of class names not found anywhere in the graph
     """
-    logger.info("checking for class '{c}' on nodemeister instance: {n}".format(n=nm_host, c=class_name))
     g = class_to_node_graph(nm_host)
-
-    c_name = 'Class[{c}]'.format(c=class_name)
-    try:
-        g.node[c_name]
-    except KeyError:
-        raise SystemExit("ERROR: class {c} not found anywhere in graph.".format(c=class_name))
-
-    logger.debug("searching graph for endpoints connected to {c}".format(c=c_name))
-
     rg = g.reverse()
-
     result = {}
-    endpoints = nx.algorithms.traversal.depth_first_search.dfs_predecessors(rg, c_name)
-    for e in endpoints:
-        if rg.node[e]['_type'] == 'node':
-            result[rg.node[e]['_name']] = rg.node[endpoints[e]]
-    return result
+    not_found = []
+    for class_name in class_names:
+        logger.info("checking for class '{c}' on nodemeister instance: {n}".format(n=nm_host, c=class_name))
+
+        c_name = 'Class[{c}]'.format(c=class_name)
+        try:
+            g.node[c_name]
+        except KeyError:
+            not_found.append(class_name)
+            logger.error("ERROR: class {c} not found anywhere in graph.".format(c=class_name))
+            continue
+
+        logger.debug("searching graph for endpoints connected to {c}".format(c=c_name))
+
+        endpoints = nx.algorithms.traversal.depth_first_search.dfs_predecessors(rg, c_name)
+        for e in endpoints:
+            if rg.node[e]['_type'] == 'node':
+                result[rg.node[e]['_name']] = rg.node[endpoints[e]]
+    return {'endpoints': result, 'not_found': not_found}
 
 def parse_opts_args(argv):
     """ parse options and arguments """
-    usage = "USAGE: find_class.py [options] class_name"
+    usage = "USAGE: find_class.py [options] class_name [[class_name] ...]"
     p = OptionParser(usage=usage)
 
     p.add_option('-v', '--verbose', dest='verbose', action='count', default=0,
@@ -204,8 +216,8 @@ if __name__ == "__main__":
         logger.setLevel(logging.INFO)
         logger.info("Running with INFO level logging...")
 
-    if len(args) != 1:
-        raise SystemExit("ERROR: you must specify exactly one argument (class name to search for)")
+    if len(args) < 1:
+        raise SystemExit("ERROR: you must specify one or more arguments (class name to search for)")
 
-    cls = args[0]
-    find_class(opts.nm_host, cls, out_format=opts.out_format)
+    cls = args[0:]
+    find_classes(opts.nm_host, cls, out_format=opts.out_format)
