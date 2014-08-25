@@ -53,7 +53,7 @@ def format_output_files(result_dict):
                 fh.write("{c}\n".format(c=c))
     return True
 
-def find_classes(nm_hosts, class_names, out_format='text'):
+def find_classes(nm_hosts, class_names, out_format='text', use_pickle=False):
     """
     find all uses of a specified class(es) on the specified NodeMeister host(s)
 
@@ -61,6 +61,9 @@ def find_classes(nm_hosts, class_names, out_format='text'):
     :type nm_hosts: list of strings
     :param class_names: list of class names to search for
     :type class_names: list
+    :param use_pickle: if true, write graph to a pickle file if it does not exist; read
+    from pickle file (instead of live API) if it does
+    :type use_pickle: boolean
     """
     logger.info("searching for class(es) {c}".format(c=class_names))
     formats = {'text': format_output_text, 'files': format_output_files}
@@ -69,7 +72,7 @@ def find_classes(nm_hosts, class_names, out_format='text'):
 
     results = {}
     for host in nm_hosts:
-        results[host] = find_classes_on_host(host, class_names)
+        results[host] = find_classes_on_host(host, class_names, use_pickle=use_pickle)
 
     logger.info("finished searching; formatting output as '{o}'".format(o=out_format))
     formats[out_format](results)
@@ -159,14 +162,23 @@ def class_to_node_graph(nm_host):
     logger.debug("done creating graph")
     return g
 
-def find_classes_on_host(nm_host, class_names, out_format='text'):
+def find_classes_on_host(nm_host, class_names, out_format='text', use_pickle=False):
     """
     find all uses of a class(es) on a given nodemeister host
 
     returns a dict with two keys, 'endpoints' (a dict of node to endpoint) and
     'not_found', a list of class names not found anywhere in the graph
     """
-    g = class_to_node_graph(nm_host)
+    picklefile = "graph_{h}.pickle".format(h=nm_host)
+    if use_pickle:
+        logger.debug("running with use_pickle=True")
+        if os.path.exists(picklefile):
+            logger.warning("Not getting live data; using pickled data from {pf}".format(pf=picklefile))
+            g = nx.read_gpickle(picklefile)
+        else:
+            g = class_to_node_graph(nm_host)
+            logger.warning("Pickling graph to {pf}".format(pf=picklefile))
+            nx.write_gpickle(g, picklefile)
     rg = g.reverse()
     result = {}
     not_found = []
@@ -203,6 +215,9 @@ def parse_opts_args(argv):
     p.add_option('-o', '--output-format', dest='out_format', action='store', type='string', default='text',
                  help='output format; "text" for human-readable text (default) or "files" for one file per nodemeister listing hostnames')
 
+    p.add_option('-p', '--pickle', dest='pickle_path', action='store_true', default=False,
+                 help='store graph to pickle file; read from file if it exists')
+
     (options, args) = p.parse_args(argv)
     return (options, args)
 
@@ -220,4 +235,7 @@ if __name__ == "__main__":
         raise SystemExit("ERROR: you must specify one or more arguments (class name to search for)")
 
     cls = args[0:]
-    find_classes(opts.nm_host, cls, out_format=opts.out_format)
+    use_pickle = False
+    if opts.pickle_path:
+        use_pickle = True
+    find_classes(opts.nm_host, cls, out_format=opts.out_format, use_pickle=use_pickle)
