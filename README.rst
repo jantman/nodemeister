@@ -1,22 +1,9 @@
-**BE WARNED this is currently alpha code. Very alpha code. So long as this
-message is here, we make no guarantee that it will even run outside of a very
-specific configuration. At the very least, it has few to no tests, depends on
-a Python package that's only available as a pull request on GitHub, and has
-many unused code paths still in the code base. It needs quite a bit of work
-before we can consider it ready for production use outside of our own
-environment. It's being put out here in this early state both out of agreement
-with the original author, and because of some recent interest in the Puppet
-community around alternate ENCs.**
-
-**With luck, you can expect major improvements coming in the next few weeks
-  and months as the project takes off; once we have sufficient testing in
-  place, real development will resume. Also BE WARNED that database migrations
-  will be reset to 0 in an upcoming commit, which will require a new database
-  for any upgrades from the current code.**
-
-
 nodemeister
 ===========
+
+.. image:: http://www.repostatus.org/badges/0.1.0/active.svg
+   :alt: Project Status: Active - The project has reached a stable, usable state and is being actively developed.
+   :target: http://www.repostatus.org/#active
 
 NodeMeister is an External Node Classifier (ENC) for Puppet. It maintains a
 database of your nodes, as well as what parameters and classes (including
@@ -28,6 +15,16 @@ Postgres database. We wanted not
 only to create an ENC that meets certain feature gaps lacking in (at the time
 of writing) other options, but also which is friendly to the non-Rubyists out
 there.
+
+**BE WARNED this is currently alpha code. Very alpha code. So long as this
+message is here, we make no guarantee that it will even run outside of a very
+specific configuration. At the very least, it has few to no tests, depends on
+a Python package that's only available as a pull request on GitHub, and has
+many unused code paths still in the code base. It needs quite a bit of work
+before we can consider it ready for production use outside of our own
+environment. It's being put out here in this early state both out of agreement
+with the original author, and because of some recent interest in the Puppet
+community around alternate ENCs.**
 
 Why?
 ----
